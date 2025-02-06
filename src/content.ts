@@ -166,11 +166,6 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     return true; // Required for async response
   } else if (request.action === 'GET_CURRENT_TIME') {
     const currentTime = getCurrentVideoTime();
-    log('current_time_requested', {
-      url: window.location.href,
-      timestamp: Date.now(),
-      currentTime
-    });
     sendResponse({ currentTime });
   }
 }); 
