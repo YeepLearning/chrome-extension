@@ -4,11 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "instant": "npx instant-cli@latest init",
-    "instant:push:perms": "bunx instant-cli@latest push perms",
-    "instant:push:schema": "bunx instant-cli@latest push schema",
     "dev": "vite",
-    "build": "tsc -p tsconfig.content.json && tsc && vite build --sourcemap true",
+    "build": "tsc -p tsconfig.content.json && tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },
