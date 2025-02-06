@@ -109,6 +109,7 @@ async function getYouTubeTranscript(): Promise<TranscriptSegment[] | null> {
       error: error instanceof Error ? error.message : 'Unknown error',
       url: window.location.href
     });
+    console.error('Error getting YouTube transcript:', error);
     return null;
   }
 }

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { TranscriptViewer } from '@/components/TranscriptViewer';
+import { buildSystemMessage } from '@/utils/chat';
+import { useChat } from 'ai/react';
 
 interface TranscriptSegment {
   text: string;
@@ -7,12 +9,34 @@ interface TranscriptSegment {
   duration: number;
 }
 
+// locally, build returns this
+const PRODUCTION_URL = 'http://localhost:3000/api/chat';
+const DEVELOPMENT_URL = 'http://localhost:3000/api/chat';
+const CHAT_API = process.env.NODE_ENV === 'production'
+  ? PRODUCTION_URL
+  : DEVELOPMENT_URL;
+
 export default function App() {
   const [transcript, setTranscript] = useState<TranscriptSegment[] | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
-  const [question, setQuestion] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const { messages, input, handleInputChange, handleSubmit, setMessages } = useChat({
+    api: CHAT_API,
+    initialInput: transcript ? buildSystemMessage(transcript) : '',
+  });
+
+  // Effect to update system message when transcript changes
+  useEffect(() => {
+    if (!transcript) return;
+
+    setMessages(messages => {
+      const systemMessage = { id: 'system', role: 'assistant', content: buildSystemMessage(transcript) };
+      const userMessages = messages.filter(m => m.role === 'user' || m.id !== 'system');
+      return [systemMessage, ...userMessages];
+    });
+  }, [transcript, setMessages]);
 
   // Separate effect for transcript loading
   useEffect(() => {
@@ -20,7 +44,7 @@ export default function App() {
       try {
         setIsLoading(true);
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        
+
         if (!tab.id) {
           throw new Error('No active tab found');
         }
@@ -28,10 +52,11 @@ export default function App() {
         // Add retry logic for content script connection
         let retries = 0;
         const maxRetries = 3;
-        
+
         while (retries < maxRetries) {
           try {
             const response = await chrome.tabs.sendMessage(tab.id, { action: 'GET_TRANSCRIPT' });
+            console.log('response', response);
             setTranscript(response.transcript);
             break;
           } catch (error) {
@@ -98,16 +123,30 @@ export default function App() {
         />
       </div>
 
+      {/* Chat messages */}
+      <div className="border-t bg-gray-50 p-2 h-[200px] overflow-y-auto">
+        {messages.map((m) => (
+          <div
+            key={m.id}
+            className={`mb-2 p-2 rounded ${m.role === 'user' ? 'bg-blue-100' : 'bg-green-100'
+              }`}
+          >
+            <div className="font-bold">{m.role === 'user' ? 'You' : 'Lion King'}:</div>
+            <div className="whitespace-pre-wrap">{m.content}</div>
+          </div>
+        ))}
+      </div>
+
       {/* Question input - keep it fixed at bottom */}
-      <div className="sticky bottom-0 p-2 border-t bg-white">
+      <form onSubmit={handleSubmit} className="sticky bottom-0 p-2 border-t bg-white">
         <input
           type="text"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
+          value={input}
+          onChange={handleInputChange}
           placeholder="Ask a question about the video..."
           className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
-      </div>
+      </form>
     </div>
   );
 }
