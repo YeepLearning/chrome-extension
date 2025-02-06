@@ -12,20 +12,39 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState(0);
   const [question, setQuestion] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Separate effect for transcript loading
   useEffect(() => {
     const loadTranscript = async () => {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tabs[0].id) return;
-
       try {
-        const response = await chrome.tabs.sendMessage(tabs[0].id, { action: 'GET_TRANSCRIPT' });
-        if (response?.transcript) {
-          setTranscript(response.transcript);
+        setIsLoading(true);
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        
+        if (!tab.id) {
+          throw new Error('No active tab found');
+        }
+
+        // Add retry logic for content script connection
+        let retries = 0;
+        const maxRetries = 3;
+        
+        while (retries < maxRetries) {
+          try {
+            const response = await chrome.tabs.sendMessage(tab.id, { action: 'GET_TRANSCRIPT' });
+            setTranscript(response.transcript);
+            break;
+          } catch (error) {
+            retries++;
+            if (retries === maxRetries) {
+              throw new Error('Could not connect to page. Please refresh the page and try again.');
+            }
+            // Wait before retrying
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
         }
       } catch (error) {
-        console.error('Failed to load transcript:', error);
+        setError(error instanceof Error ? error.message : 'Unknown error occurred');
       } finally {
         setIsLoading(false);
       }
@@ -59,7 +78,7 @@ export default function App() {
   if (isLoading) {
     return (
       <div className="w-[400px] h-[400px] flex items-center justify-center bg-white text-gray-500">
-        Loading transcript...
+        {error ? error : 'Loading transcript...'}
       </div>
     );
   }
