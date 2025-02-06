@@ -1,3 +1,5 @@
+import { logEvent } from './instantdb'
+
 const DEV_SERVER = 'http://localhost:3000'
 
 export async function log(event: string, data: any = {}) {
@@ -13,6 +15,9 @@ export async function log(event: string, data: any = {}) {
                 data
             })
         })
+
+        // log to instantdb
+        logEvent(event, data)
 
         if (!response.ok) {
             console.error('Failed to log event:', event)
