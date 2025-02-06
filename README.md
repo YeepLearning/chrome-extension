@@ -1,7 +1,12 @@
-# React Chrome Extension Template
+# YouTube Transcript Viewer Extension
 
-This is a template for creating a Chrome extension using React and [Vite](https://vitejs.dev/) with TypeScript.
+A Chrome extension that displays YouTube video transcripts synchronized with the current playback time. Built with React and TypeScript.
 
+## Features
+
+- Automatically fetches YouTube video transcripts
+- Shows current transcript text based on video timestamp
+- Real-time synchronization with video playback
 
 ## Getting Started
 
@@ -11,12 +16,11 @@ Make sure you have [Node.js](https://nodejs.org/) (version 18+ or 20+) installed
 
 ### Setup
 
-1. Clone or fork the repository :
+1. Clone the repository:
 
     ```sh
-    # To clone
-    git clone https://github.com/5tigerjelly/chrome-extension-react-template
-    cd chrome-extension-react-template
+    git clone [your-repo-url]
+    cd youtube-transcript-viewer
     ```
 
 2. Install the dependencies:
@@ -33,8 +37,6 @@ To start the development server:
 npm run dev
 ```
 
-This will start the Vite development server and open your default browser.
-
 ## 📦 Build 
 
 To create a production build:
@@ -43,23 +45,17 @@ To create a production build:
 npm run build
 ```
 
-This will generate the build files in the `build` directory.
-
 ## 📂 Load Extension in Chrome
 
-1. Open Chrome and navigate to `chrome://extensions/`.
-2. Enable "Developer mode" using the toggle switch in the top right corner.
-3. Click "Load unpacked" and select the `build` directory.
+1. Open Chrome and navigate to `chrome://extensions/`
+2. Enable "Developer mode" using the toggle switch in the top right corner
+3. Click "Load unpacked" and select the `build` directory
 
-Your React app should now be loaded as a Chrome extension!
+## Usage
 
-## 🗂️ Project Structure
-
-- `public/`: Contains static files and the `manifest.json`.
-- `src/`: Contains the React app source code.
-- `vite.config.ts`: Vite configuration file.
-- `tsconfig.json`: TypeScript configuration file.
-- `package.json`: Contains the project dependencies and scripts.
+1. Navigate to any YouTube video
+2. Click the extension icon to view the transcript
+3. The transcript will automatically sync with the video playback
 
 ## License
 
