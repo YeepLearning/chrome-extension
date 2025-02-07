@@ -2,12 +2,11 @@ import { useEffect, useState } from 'react';
 import { TranscriptViewer } from '@/components/TranscriptViewer';
 import { buildSystemMessage } from '@/utils/chat';
 import { useChat } from 'ai/react';
+import type { TranscriptSegment } from './content-scripts/youtube/youtube';
+import type { LeetCodeContent } from './content-scripts/leetcode/leetcode';
+import type { PageContent } from './content-scripts/default/default';
 
-interface TranscriptSegment {
-  text: string;
-  start: number;
-  duration: number;
-}
+type Content = TranscriptSegment[] | LeetCodeContent | PageContent | null;
 
 // locally, build returns this
 const PRODUCTION_URL = 'http://localhost:3000/api/chat';
@@ -17,30 +16,30 @@ const CHAT_API = process.env.NODE_ENV === 'production'
   : DEVELOPMENT_URL;
 
 export default function App() {
-  const [transcript, setTranscript] = useState<TranscriptSegment[] | null>(null);
+  const [content, setContent] = useState<Content>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const { messages, input, handleInputChange, handleSubmit, setMessages } = useChat({
     api: CHAT_API,
-    initialInput: transcript ? buildSystemMessage(transcript) : '',
+    initialInput: content ? buildSystemMessage(content) : '',
   });
 
-  // Effect to update system message when transcript changes
+  // Effect to update system message when content changes
   useEffect(() => {
-    if (!transcript) return;
+    if (!content) return;
 
     setMessages(messages => {
-      const systemMessage = { id: 'system', role: 'assistant', content: buildSystemMessage(transcript) };
+      const systemMessage = { id: 'system', role: 'assistant', content: buildSystemMessage(content) };
       const userMessages = messages.filter(m => m.role === 'user' || m.id !== 'system');
       return [systemMessage, ...userMessages];
     });
-  }, [transcript, setMessages]);
+  }, [content, setMessages]);
 
-  // Separate effect for transcript loading
+  // Separate effect for content loading
   useEffect(() => {
-    const loadTranscript = async () => {
+    const loadContent = async () => {
       try {
         setIsLoading(true);
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -55,9 +54,11 @@ export default function App() {
 
         while (retries < maxRetries) {
           try {
-            const response = await chrome.tabs.sendMessage(tab.id, { action: 'GET_TRANSCRIPT' });
+            // Determine which action to use based on the URL
+            const action = tab.url?.includes('youtube.com') ? 'GET_TRANSCRIPT' : 'GET_CONTENT';
+            const response = await chrome.tabs.sendMessage(tab.id, { action });
             console.log('response', response);
-            setTranscript(response.transcript);
+            setContent(response.content);
             break;
           } catch (error) {
             retries++;
@@ -75,12 +76,12 @@ export default function App() {
       }
     };
 
-    loadTranscript();
+    loadContent();
   }, []);
 
-  // Separate effect for time updates
+  // Separate effect for time updates (only for YouTube)
   useEffect(() => {
-    if (!transcript) return; // Don't start polling until we have a transcript
+    if (!content || !Array.isArray(content)) return; // Only run for YouTube content
 
     const updateTime = async () => {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -98,29 +99,53 @@ export default function App() {
 
     const interval = setInterval(updateTime, 100);
     return () => clearInterval(interval);
-  }, [transcript]);
+  }, [content]);
 
   if (isLoading) {
     return (
       <div className="w-[400px] h-[400px] flex items-center justify-center bg-white text-gray-500">
-        {error ? error : 'Loading transcript...'}
+        {error ? error : 'Loading content...'}
       </div>
     );
   }
 
   return (
     <div className="w-[400px] h-[600px] flex flex-col bg-white text-gray-900">
-      {/* Current time display */}
-      <div className="sticky top-0 p-2 text-sm font-mono text-gray-500 border-b bg-white">
-        {formatTime(currentTime)}
-      </div>
+      {/* Current time display - only for YouTube */}
+      {Array.isArray(content) && (
+        <div className="sticky top-0 p-2 text-sm font-mono text-gray-500 border-b bg-white">
+          {formatTime(currentTime)}
+        </div>
+      )}
 
-      {/* Transcript viewer - make it scrollable */}
+      {/* Content viewer - make it scrollable */}
       <div className="flex-1 overflow-y-auto">
-        <TranscriptViewer
-          transcript={transcript}
-          currentTime={currentTime}
-        />
+        {Array.isArray(content) ? (
+          <TranscriptViewer
+            transcript={content}
+            currentTime={currentTime}
+          />
+        ) : content ? (
+          <div className="p-4">
+            {'problemDescription' in content ? (
+              // LeetCode content
+              <>
+                <h2 className="text-lg font-bold mb-4">Problem Description</h2>
+                <div className="whitespace-pre-wrap mb-4">{content.problemDescription}</div>
+                <h2 className="text-lg font-bold mb-4">Your Solution</h2>
+                <pre className="bg-gray-100 p-4 rounded overflow-x-auto">
+                  <code>{content.userSolution}</code>
+                </pre>
+              </>
+            ) : (
+              // Default content
+              <>
+                <h1 className="text-xl font-bold mb-4">{content.title}</h1>
+                <div className="whitespace-pre-wrap">{content.mainContent}</div>
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
 
       {/* Chat messages */}
@@ -131,7 +156,7 @@ export default function App() {
             className={`mb-2 p-2 rounded ${m.role === 'user' ? 'bg-blue-100' : 'bg-green-100'
               }`}
           >
-            <div className="font-bold">{m.role === 'user' ? 'You' : 'Lion King'}:</div>
+            <div className="font-bold">{m.role === 'user' ? 'You' : 'Assistant'}:</div>
             <div className="whitespace-pre-wrap">{m.content}</div>
           </div>
         ))}
@@ -143,7 +168,7 @@ export default function App() {
           type="text"
           value={input}
           onChange={handleInputChange}
-          placeholder="Ask a question about the video..."
+          placeholder="Ask a question about the content..."
           className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </form>
