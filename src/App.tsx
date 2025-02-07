@@ -1,43 +1,62 @@
-import { useEffect, useState } from 'react';
-import { TranscriptViewer } from '@/components/TranscriptViewer';
+import { useState, useEffect } from 'react';
+import { Navigation, type Tab } from '@/components/Navigation';
+import { HomeTab } from '@/components/HomeTab';
+import { ChatTab } from '@/components/ChatTab';
+import { DebugTab } from '@/components/DebugTab';
 import { buildSystemMessage } from '@/utils/chat';
 import { useChat } from 'ai/react';
-import type { TranscriptSegment } from './content-scripts/youtube/youtube';
-import type { LeetCodeContent } from './content-scripts/leetcode/leetcode';
-import type { PageContent } from './content-scripts/default/default';
-
-type Content = TranscriptSegment[] | LeetCodeContent | PageContent | null;
-
-// locally, build returns this
-const PRODUCTION_URL = 'http://localhost:3000/api/chat';
-const DEVELOPMENT_URL = 'http://localhost:3000/api/chat';
-const CHAT_API = process.env.NODE_ENV === 'production'
-  ? PRODUCTION_URL
-  : DEVELOPMENT_URL;
+import type { Message } from 'ai';
+import { Sun, Moon } from 'lucide-react';
 
 export default function App() {
-  const [content, setContent] = useState<Content>(null);
-  const [currentTime, setCurrentTime] = useState(0);
+  const [activeTab, setActiveTab] = useState<Tab>('home');
+  const [extractedContent, setExtractedContent] = useState<string>('');
+  const [screenshot, setScreenshot] = useState<string>();
+  const [events, setEvents] = useState<Array<{ type: string; timestamp: string; data?: any }>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isDark, setIsDark] = useState(() =>
+    window.matchMedia('(prefers-color-scheme: dark)').matches
+  );
 
-  const { messages, input, handleInputChange, handleSubmit, setMessages } = useChat({
-    api: CHAT_API,
-    initialInput: content ? buildSystemMessage(content) : '',
+  // Effect to handle system dark mode changes
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e: MediaQueryListEvent) => setIsDark(e.matches);
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+
+  // Effect to apply dark mode class
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDark]);
+
+  const { messages, setInput, isLoading: isChatLoading, setMessages } = useChat({
+    api: process.env.NODE_ENV === 'production'
+      ? 'http://localhost:3000/api/chat'
+      : 'http://localhost:3000/api/chat',
+    initialInput: extractedContent ? buildSystemMessage(extractedContent) : '',
   });
 
-  // Effect to update system message when content changes
-  useEffect(() => {
-    if (!content) return;
+  // Handle sending a new message
+  const handleSendMessage = (message: string) => {
+    // Set the input which will trigger the useChat hook to send the message
+    setInput(message);
 
-    setMessages(messages => {
-      const systemMessage = { id: 'system', role: 'assistant', content: buildSystemMessage(content) };
-      const userMessages = messages.filter(m => m.role === 'user' || m.id !== 'system');
-      return [systemMessage, ...userMessages];
-    });
-  }, [content, setMessages]);
+    // Log the event
+    setEvents(prev => [...prev, {
+      type: 'CHAT_MESSAGE_SENT',
+      timestamp: new Date().toISOString(),
+      data: { message }
+    }]);
+  };
 
-  // Separate effect for content loading
+  // Effect to load content
   useEffect(() => {
     const loadContent = async () => {
       try {
@@ -54,11 +73,17 @@ export default function App() {
 
         while (retries < maxRetries) {
           try {
-            // Determine which action to use based on the URL
-            const action = tab.url?.includes('youtube.com') ? 'GET_TRANSCRIPT' : 'GET_CONTENT';
-            const response = await chrome.tabs.sendMessage(tab.id, { action });
-            console.log('response', response);
-            setContent(response.content);
+            const response = await chrome.tabs.sendMessage(tab.id, { action: 'GET_CONTENT' });
+            if (response.content) {
+              setExtractedContent(response.content.mainContent || '');
+              setScreenshot(response.content.screenshot);
+              // Log the event
+              setEvents(prev => [...prev, {
+                type: 'CONTENT_LOADED',
+                timestamp: new Date().toISOString(),
+                data: { url: tab.url }
+              }]);
+            }
             break;
           } catch (error) {
             retries++;
@@ -71,6 +96,12 @@ export default function App() {
         }
       } catch (error) {
         setError(error instanceof Error ? error.message : 'Unknown error occurred');
+        // Log the error event
+        setEvents(prev => [...prev, {
+          type: 'ERROR',
+          timestamp: new Date().toISOString(),
+          data: { error: error instanceof Error ? error.message : 'Unknown error' }
+        }]);
       } finally {
         setIsLoading(false);
       }
@@ -79,115 +110,70 @@ export default function App() {
     loadContent();
   }, []);
 
-  // Separate effect for time updates (only for YouTube)
-  useEffect(() => {
-    if (!content || !Array.isArray(content)) return; // Only run for YouTube content
-
-    const updateTime = async () => {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tabs[0].id) return;
-
-      try {
-        const response = await chrome.tabs.sendMessage(tabs[0].id, { action: 'GET_CURRENT_TIME' });
-        if (response?.currentTime !== undefined) {
-          setCurrentTime(response.currentTime);
-        }
-      } catch (error) {
-        console.error('Failed to get current time:', error);
-      }
-    };
-
-    const interval = setInterval(updateTime, 100);
-    return () => clearInterval(interval);
-  }, [content]);
+  // Convert chat messages to our format
+  const chatMessages = messages.map(msg => ({
+    id: msg.id,
+    role: msg.role as 'user' | 'assistant',
+    content: msg.content,
+    timestamp: new Date().toLocaleTimeString()
+  }));
 
   if (isLoading) {
     return (
-      <div className="w-[400px] h-[400px] flex items-center justify-center bg-white text-gray-500">
+      <div className="w-[400px] h-[600px] flex items-center justify-center bg-background dark:bg-background-dark text-secondary transition-colors">
         {error ? error : 'Loading content...'}
       </div>
     );
   }
 
   return (
-    <div className="w-[400px] h-[600px] flex flex-col bg-white text-gray-900">
-      {/* Current time display - only for YouTube */}
-      {Array.isArray(content) && (
-        <div className="sticky top-0 p-2 text-sm font-mono text-gray-500 border-b bg-white">
-          {formatTime(currentTime)}
-        </div>
-      )}
+    <div className="w-[400px] h-[600px] flex flex-col bg-background dark:bg-background-dark text-secondary transition-colors">
+      {/* Header with dark mode toggle */}
+      <header className="px-4 py-2 flex justify-end border-b border-primary-light/20 dark:border-primary-dark/20">
+        <button
+          onClick={() => setIsDark(!isDark)}
+          className="p-2 rounded-lg hover:bg-surface dark:hover:bg-surface-dark transition-colors"
+        >
+          {isDark ? (
+            <Sun className="w-5 h-5 text-primary" />
+          ) : (
+            <Moon className="w-5 h-5 text-primary" />
+          )}
+        </button>
+      </header>
 
-      {/* Content viewer - make it scrollable */}
-      <div className="flex-1 overflow-y-auto">
-        {Array.isArray(content) ? (
-          <TranscriptViewer
-            transcript={content}
-            currentTime={currentTime}
+      {/* Main content area with padding for navigation */}
+      <main className="flex-1 overflow-hidden pb-16">
+        {activeTab === 'home' && (
+          <HomeTab
+            recentItems={[
+              {
+                title: 'Current Page',
+                timestamp: new Date().toLocaleTimeString(),
+                url: window.location.href,
+                type: 'website'
+              }
+            ]}
           />
-        ) : content ? (
-          <div className="p-4">
-            {'problemDescription' in content ? (
-              // LeetCode content
-              <>
-                <h2 className="text-lg font-bold mb-4">Problem Description</h2>
-                <div className="whitespace-pre-wrap mb-4">{content.problemDescription}</div>
-                <h2 className="text-lg font-bold mb-4">Your Solution</h2>
-                <pre className="bg-gray-100 p-4 rounded overflow-x-auto">
-                  <code>{content.userSolution}</code>
-                </pre>
-              </>
-            ) : (
-              // Default content
-              <>
-                <h1 className="text-xl font-bold mb-4">{content.title}</h1>
-                <div className="whitespace-pre-wrap mb-4">{content.mainContent}</div>
-                {content.screenshot && (
-                  <div className="mt-4">
-                    <h2 className="text-lg font-bold mb-2">Page Screenshot</h2>
-                    <img
-                      src={content.screenshot}
-                      alt="Page screenshot"
-                      className="w-full rounded-lg shadow-lg"
-                    />
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        ) : null}
-      </div>
+        )}
+        {activeTab === 'chat' && (
+          <ChatTab
+            messages={chatMessages}
+            onSendMessage={handleSendMessage}
+            isLoading={isChatLoading}
+          />
+        )}
+        {activeTab === 'debug' && (
+          <DebugTab
+            extractedContent={extractedContent}
+            screenshot={screenshot}
+            events={events}
+          />
+        )}
+      </main>
 
-      {/* Chat messages */}
-      <div className="border-t bg-gray-50 p-2 h-[200px] overflow-y-auto">
-        {messages.map((m) => (
-          <div
-            key={m.id}
-            className={`mb-2 p-2 rounded ${m.role === 'user' ? 'bg-blue-100' : 'bg-green-100'
-              }`}
-          >
-            <div className="font-bold">{m.role === 'user' ? 'You' : 'Assistant'}:</div>
-            <div className="whitespace-pre-wrap">{m.content}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Question input - keep it fixed at bottom */}
-      <form onSubmit={handleSubmit} className="sticky bottom-0 p-2 border-t bg-white">
-        <input
-          type="text"
-          value={input}
-          onChange={handleInputChange}
-          placeholder="Ask a question about the content..."
-          className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-      </form>
+      {/* Navigation */}
+      <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
     </div>
   );
-}
-
-function formatTime(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = Math.floor(seconds % 60);
-  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
