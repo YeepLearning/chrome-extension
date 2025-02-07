@@ -37,6 +37,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
       : (handler as typeof leetcode | typeof defaultHandler).getContent();
 
     getContentPromise.then(content => {
+      console.log('content', content);
       if (content) {
         log('content_response_sent', {
           url: window.location.href,

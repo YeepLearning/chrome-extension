@@ -141,7 +141,17 @@ export default function App() {
               // Default content
               <>
                 <h1 className="text-xl font-bold mb-4">{content.title}</h1>
-                <div className="whitespace-pre-wrap">{content.mainContent}</div>
+                <div className="whitespace-pre-wrap mb-4">{content.mainContent}</div>
+                {content.screenshot && (
+                  <div className="mt-4">
+                    <h2 className="text-lg font-bold mb-2">Page Screenshot</h2>
+                    <img
+                      src={content.screenshot}
+                      alt="Page screenshot"
+                      className="w-full rounded-lg shadow-lg"
+                    />
+                  </div>
+                )}
               </>
             )}
           </div>
